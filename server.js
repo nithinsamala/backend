@@ -116,27 +116,37 @@ app.post("/api/signup", async (req, res) => {
       return res.status(400).json({ message: "Email and password required" });
     }
 
-    const exists = await User.findOne({ email });
-    if (exists) {
-      return res.status(409).json({ message: "User already exists" });
-    }
-
     const hashed = await bcrypt.hash(password, 12);
-    const user = await User.create({ email, password: hashed });
+
+    const user = await User.create({
+      email,
+      password: hashed
+    });
 
     const token = generateToken(user._id);
     sendToken(res, token);
 
-    res.json({
+    return res.json({
       success: true,
       user: { email: user.email }
     });
 
   } catch (err) {
-    console.error("🔥 SIGNUP ERROR:", err);
-    res.status(500).json({ message: "Signup failed" });
+    console.error("🔥 SIGNUP ERROR FULL:", err);
+
+    // ✅ HANDLE DUPLICATE EMAIL
+    if (err.code === 11000) {
+      return res.status(409).json({
+        message: "User already exists"
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal server error"
+    });
   }
 });
+
 
   
 
