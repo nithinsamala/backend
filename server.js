@@ -137,37 +137,90 @@ app.get("/api/auth/check", checkToken, (req, res) => {
 /* =========================
    CHAT FROM PDF
 ========================= */
+/* =========================
+   AI CHAT (REUSE PREVIOUS PDF)
+========================= */
 app.post("/api/chat", checkToken, async (req, res) => {
   try {
     const { message } = req.body;
-    if (!message) return res.status(400).json({ reply: "Message required" });
+    if (!message) {
+      return res.status(400).json({ reply: "Message is required" });
+    }
 
+    /* =========================
+       GET MOST RECENT PDF
+       (Even from previous chat)
+    ========================= */
     const UploadedFile =
       mongoose.models.UploadedFile ||
       mongoose.model("UploadedFile");
 
-    const file = await UploadedFile
+    const latestFile = await UploadedFile
       .findOne({ uploadedBy: req.userId })
       .sort({ uploadedAt: -1 });
 
-    if (!file) return res.json({ reply: "❌ Please upload a PDF first." });
+    if (!latestFile) {
+      return res.json({
+        reply: "❌ No document found. Please upload a PDF first."
+      });
+    }
 
-    const filePath = path.join(__dirname, "uploads", file.filename);
-    if (!fs.existsSync(filePath))
-      return res.json({ reply: "❌ File not found." });
+    const filePath = path.join(__dirname, "uploads", latestFile.filename);
 
-    const pdfData = await pdfParse(fs.readFileSync(filePath));
+    if (!fs.existsSync(filePath)) {
+      return res.json({
+        reply: "❌ Previous document not found on server."
+      });
+    }
+
+    /* =========================
+       READ PDF
+    ========================= */
+    const pdfBuffer = fs.readFileSync(filePath);
+    const pdfData = await pdfParse(pdfBuffer);
+
+    if (!pdfData.text || !pdfData.text.trim()) {
+      return res.json({
+        reply: "❌ The previous document has no readable text."
+      });
+    }
+
+    // Limit context to avoid token overflow
     const context = pdfData.text.slice(0, 6000);
 
+    /* =========================
+       GROQ REQUEST
+    ========================= */
     const groqResponse = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
         model: "llama-3.3-70b-versatile",
         messages: [
-          { role: "system", content: "Answer only from document." },
-          { role: "user", content: `${context}\n\nQuestion: ${message}` }
+          {
+            role: "system",
+            content: `
+You are a document-based assistant.
+
+RULES:
+1. Answer ONLY using the document content.
+2. If answer not present, say:
+   "Answer not found in the provided document."
+3. Do not use external knowledge.
+`
+          },
+          {
+            role: "user",
+            content: `
+Document Content:
+${context}
+
+User Question:
+${message}
+`
+          }
         ],
-        temperature: 0
+        temperature: 0,
+        max_tokens: 512
       },
       {
         headers: {
@@ -177,15 +230,21 @@ app.post("/api/chat", checkToken, async (req, res) => {
       }
     );
 
-    res.json({
-      reply: groqResponse.data.choices[0].message.content
-    });
+    const reply =
+      groqResponse.data?.choices?.[0]?.message?.content ||
+      "Answer not found in the provided document.";
 
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ reply: "❌ Chat failed" });
+    return res.json({ reply });
+
+  } catch (error) {
+    console.error("🔥 CHAT ERROR:", error.response?.data || error.message);
+    return res.status(500).json({
+      reply: "❌ Failed to answer from the document."
+    });
   }
 });
+
+
 
 /* =========================
    DELETE CHAT + FILES
