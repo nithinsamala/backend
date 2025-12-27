@@ -189,7 +189,7 @@ app.get("/api/auth/check", checkToken, async (req, res) => {
 /* =========================
    LOGOUT
 ========================= */
-app.post("/logout", (req, res) => {
+app.post("/api/logout", (req, res) => {
   res.clearCookie("token", {
     secure: true,
     sameSite: "none",
