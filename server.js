@@ -18,6 +18,19 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 /* =========================
+   ENV VALIDATION (IMPORTANT)
+========================= */
+if (!process.env.MONGODB_URI) {
+  console.error("❌ MONGODB_URI is missing");
+}
+if (!process.env.JWT_SECRET) {
+  console.error("❌ JWT_SECRET is missing");
+}
+if (!process.env.GROQ_API_KEY) {
+  console.error("❌ GROQ_API_KEY is missing");
+}
+
+/* =========================
    CORS (NO ERRORS)
 ========================= */
 app.use(cors({
@@ -43,7 +56,10 @@ app.use("/uploads", express.static(UPLOAD_DIR));
 ========================= */
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ MongoDB Connected"))
-  .catch(err => console.error("❌ MongoDB Error:", err));
+  .catch(err => {
+    console.error("❌ MongoDB Error:", err.message);
+    process.exit(1);
+  });
 
 /* =========================
    USER MODEL
@@ -57,8 +73,9 @@ const User = mongoose.model("User", userSchema);
 /* =========================
    JWT HELPERS
 ========================= */
-const generateToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+};
 
 const sendToken = (res, token) => {
   res.cookie("token", token, {
@@ -80,13 +97,13 @@ const checkToken = (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.id;
     next();
-  } catch {
+  } catch (err) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 };
 
 /* =========================
-   SIGNUP (FIXED)
+   SIGNUP
 ========================= */
 app.post("/api/signup", async (req, res) => {
   try {
@@ -114,7 +131,7 @@ app.post("/api/signup", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("🔥 SIGNUP ERROR:", err);
+    console.error("🔥 SIGNUP ERROR:", err.message);
     return res.status(500).json({ message: "Signup failed" });
   }
 });
@@ -139,7 +156,7 @@ app.post("/api/login", async (req, res) => {
     res.json({ success: true, user: { email: user.email } });
 
   } catch (err) {
-    console.error("🔥 LOGIN ERROR:", err);
+    console.error("🔥 LOGIN ERROR:", err.message);
     res.status(500).json({ message: "Login failed" });
   }
 });
@@ -203,8 +220,7 @@ app.post("/api/chat", checkToken, async (req, res) => {
         messages: [
           {
             role: "system",
-            content:
-              "Answer ONLY from the document. If not found, say so."
+            content: "Answer ONLY from the document."
           },
           {
             role: "user",
@@ -228,7 +244,7 @@ app.post("/api/chat", checkToken, async (req, res) => {
     });
 
   } catch (err) {
-    console.error("🔥 CHAT ERROR:", err);
+    console.error("🔥 CHAT ERROR:", err.message);
     res.status(500).json({ reply: "AI error" });
   }
 });
