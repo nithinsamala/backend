@@ -18,10 +18,10 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 /* =========================
-   CORS (FINAL – NO ERRORS)
+   CORS (NO ERRORS)
 ========================= */
 app.use(cors({
-  origin: true,          // 🔥 allow all origins dynamically
+  origin: true,          // allow all origins dynamically
   credentials: true
 }));
 app.options("*", cors());
@@ -86,41 +86,62 @@ const checkToken = (req, res, next) => {
 };
 
 /* =========================
-   SIGNUP
+   SIGNUP (FIXED)
 ========================= */
 app.post("/api/signup", async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  if (!email || !password)
-    return res.status(400).json({ message: "All fields required" });
+    if (!email || !password)
+      return res.status(400).json({ message: "All fields required" });
 
-  const exists = await User.findOne({ email });
-  if (exists)
-    return res.status(409).json({ message: "User already exists" });
+    const exists = await User.findOne({ email });
+    if (exists)
+      return res.status(409).json({ message: "User already exists" });
 
-  const hashed = await bcrypt.hash(password, 12);
-  const user = await User.create({ email, password: hashed });
+    const hashed = await bcrypt.hash(password, 12);
 
-  sendToken(res, generateToken(user._id));
-  res.json({ success: true, user: { email: user.email } });
+    const user = await User.create({
+      email,
+      password: hashed
+    });
+
+    sendToken(res, generateToken(user._id));
+
+    return res.status(201).json({
+      success: true,
+      user: { email: user.email }
+    });
+
+  } catch (err) {
+    console.error("🔥 SIGNUP ERROR:", err);
+    return res.status(500).json({ message: "Signup failed" });
+  }
 });
 
 /* =========================
    LOGIN
 ========================= */
 app.post("/api/login", async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  const user = await User.findOne({ email });
-  if (!user)
-    return res.status(401).json({ message: "Invalid credentials" });
+    const user = await User.findOne({ email });
+    if (!user)
+      return res.status(401).json({ message: "Invalid credentials" });
 
-  const match = await bcrypt.compare(password, user.password);
-  if (!match)
-    return res.status(401).json({ message: "Invalid credentials" });
+    const match = await bcrypt.compare(password, user.password);
+    if (!match)
+      return res.status(401).json({ message: "Invalid credentials" });
 
-  sendToken(res, generateToken(user._id));
-  res.json({ success: true, user: { email: user.email } });
+    sendToken(res, generateToken(user._id));
+
+    res.json({ success: true, user: { email: user.email } });
+
+  } catch (err) {
+    console.error("🔥 LOGIN ERROR:", err);
+    res.status(500).json({ message: "Login failed" });
+  }
 });
 
 /* =========================
@@ -146,7 +167,7 @@ app.post("/api/logout", (req, res) => {
 });
 
 /* =========================
-   AI CHAT FROM PDF (CHAT PAGE)
+   AI CHAT FROM PDF
 ========================= */
 app.post("/api/chat", checkToken, async (req, res) => {
   try {
@@ -207,7 +228,7 @@ app.post("/api/chat", checkToken, async (req, res) => {
     });
 
   } catch (err) {
-    console.error("🔥 AI ERROR:", err.message);
+    console.error("🔥 CHAT ERROR:", err);
     res.status(500).json({ reply: "AI error" });
   }
 });
