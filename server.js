@@ -18,38 +18,36 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 /* =========================
-   MIDDLEWARE (CORS = robust)
+   MIDDLEWARE (CORS – FIXED SAFELY)
 ========================= */
-// Log origin for debugging (remove this line after confirm)
+
+// Optional debug log (remove later)
 app.use((req, res, next) => {
-  console.log("Incoming request origin:", req.headers.origin);
+  console.log("Origin:", req.headers.origin);
   next();
 });
 
 app.use(cors({
   origin: (origin, callback) => {
-    // allow server-to-server requests (no origin)
+    // Allow requests with no origin (server-to-server, curl, etc.)
     if (!origin) return callback(null, true);
 
-    // allow local development
+    // Allow localhost
     if (origin === "http://localhost:5173") return callback(null, true);
 
-    // allow any vercel.app domain (production / preview)
-    try {
-      if (origin.endsWith(".vercel.app")) return callback(null, true);
-    } catch (e) {
-      // ignore
-    }
+    // Allow ALL Vercel deployments (preview + prod)
+    if (origin.endsWith(".vercel.app")) return callback(null, true);
 
-    // otherwise block
-    return callback(new Error("Not allowed by CORS"));
+    // 🚨 IMPORTANT: DO NOT THROW ERROR
+    // Just disallow silently
+    return callback(null, false);
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// Ensure preflight requests are handled
+// Handle preflight
 app.options("*", cors());
 
 app.use(express.json());
@@ -115,7 +113,6 @@ const checkToken = (req, res, next) => {
    SIGNUP
 ========================= */
 app.post("/api/signup", async (req, res) => {
-
   const { email, password } = req.body;
 
   if (!email || !password)
@@ -170,76 +167,6 @@ app.post("/api/logout", (req, res) => {
     secure: true
   });
   res.json({ success: true });
-});
-
-/* =========================
-   AI CHAT FROM PDF
-========================= */
-app.post("/api/chat", checkToken, async (req, res) => {
-  try {
-    const { message } = req.body;
-    if (!message) return res.status(400).json({ reply: "Message required" });
-
-    const UploadedFile =
-      mongoose.models.UploadedFile ||
-      mongoose.model("UploadedFile");
-
-    const file = await UploadedFile
-      .findOne({ uploadedBy: req.userId })
-      .sort({ uploadedAt: -1 });
-
-    if (!file)
-      return res.json({ reply: "❌ Please upload a PDF first." });
-
-    const filePath = path.join(UPLOAD_DIR, file.filename);
-    if (!fs.existsSync(filePath))
-      return res.json({ reply: "❌ Uploaded file missing on server." });
-
-    const pdfData = await pdfParse(fs.readFileSync(filePath));
-    if (!pdfData.text?.trim())
-      return res.json({ reply: "❌ No readable text found in PDF." });
-
-    const context = pdfData.text.slice(0, 6000);
-
-    const groqRes = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        model: "openai/gpt-oss-20b",
-        messages: [
-          {
-            role: "system",
-            content: `
-You are a strict document-based assistant.
-- Answer ONLY from the document
-- If not found say: "Answer not found in the provided document."
-- Use **bold headings** and bullet points only
-`
-          },
-          {
-            role: "user",
-            content: `Document:\n${context}\n\nQuestion:\n${message}`
-          }
-        ],
-        temperature: 0,
-        max_tokens: 512
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-
-    res.json({
-      reply: groqRes.data.choices?.[0]?.message?.content
-        || "Answer not found in the provided document."
-    });
-
-  } catch (err) {
-    console.error("🔥 AI ERROR:", err.message);
-    res.status(500).json({ reply: "❌ AI error" });
-  }
 });
 
 /* =========================
