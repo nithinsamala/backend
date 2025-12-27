@@ -6,9 +6,6 @@ const mongoose = require("mongoose");
 
 const router = express.Router();
 
-/* =========================
-   SCHEMA
-========================= */
 const uploadedFileSchema = new mongoose.Schema({
   filename: String,
   originalName: String,
@@ -20,14 +17,9 @@ const UploadedFile =
   mongoose.models.UploadedFile ||
   mongoose.model("UploadedFile", uploadedFileSchema);
 
-/* =========================
-   AUTH
-========================= */
 const auth = (req, res, next) => {
   try {
     const token = req.cookies.token;
-    if (!token) return res.status(401).json({ message: "Unauthorized" });
-
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.id;
     next();
@@ -36,9 +28,6 @@ const auth = (req, res, next) => {
   }
 };
 
-/* =========================
-   MULTER
-========================= */
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
@@ -51,14 +40,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-/* =========================
-   🔥 MAIN FIX
-   POST /api/uploads
-========================= */
 router.post("/", auth, upload.single("file"), async (req, res) => {
-  if (!req.file)
-    return res.status(400).json({ message: "No file uploaded" });
-
   const file = await UploadedFile.create({
     filename: req.file.filename,
     originalName: req.file.originalname,
