@@ -1,3 +1,4 @@
+// index.js
 const express = require("express");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
@@ -10,16 +11,17 @@ const path = require("path");
 const axios = require("axios");
 const pdfParse = require("pdf-parse");
 
-const uploadRouter = require("./upload");
-
 dotenv.config();
+
+const uploadRouter = require("./upload"); // keep upload.js in same folder
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 /* =========================
-   CORS (ALLOW VERSEL + LOCAL)
+   CORS (ALLOW VERCEL + LOCAL)
 ========================= */
+// For local dev + deployment: allow requests and credentials from frontend
 app.use(cors({
   origin: (origin, cb) => cb(null, true),
   credentials: true
@@ -36,9 +38,7 @@ app.use(cookieParser());
    UPLOAD DIRECTORY
 ========================= */
 const UPLOAD_DIR = path.join(__dirname, "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR);
-}
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 app.use("/uploads", express.static(UPLOAD_DIR));
 
 /* =========================
@@ -64,10 +64,12 @@ const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
 const sendToken = (res, token) => {
+  // set secure cookie only in production
+  const secureFlag = process.env.NODE_ENV === "production";
   res.cookie("token", token, {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: secureFlag,
+    sameSite: secureFlag ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000
   });
 };
@@ -77,9 +79,8 @@ const sendToken = (res, token) => {
 ========================= */
 const checkToken = (req, res, next) => {
   try {
-    const token = req.cookies.token;
+    const token = req.cookies?.token;
     if (!token) return res.status(401).json({ message: "Unauthorized" });
-
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.id;
     next();
@@ -94,20 +95,13 @@ const checkToken = (req, res, next) => {
 app.post("/api/signup", async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    if (!email || !password)
-      return res.status(400).json({ message: "All fields required" });
-
+    if (!email || !password) return res.status(400).json({ message: "All fields required" });
     const hashed = await bcrypt.hash(password, 12);
     const user = await User.create({ email, password: hashed });
-
     sendToken(res, generateToken(user._id));
     res.json({ success: true, user: { email: user.email } });
-
   } catch (err) {
-    if (err.code === 11000) {
-      return res.status(409).json({ message: "User already exists" });
-    }
+    if (err.code === 11000) return res.status(409).json({ message: "User already exists" });
     console.error(err);
     res.status(500).json({ message: "Signup failed" });
   }
@@ -119,18 +113,12 @@ app.post("/api/signup", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-
     const user = await User.findOne({ email });
-    if (!user)
-      return res.status(401).json({ message: "Invalid credentials" });
-
+    if (!user) return res.status(401).json({ message: "Invalid credentials" });
     const match = await bcrypt.compare(password, user.password);
-    if (!match)
-      return res.status(401).json({ message: "Invalid credentials" });
-
+    if (!match) return res.status(401).json({ message: "Invalid credentials" });
     sendToken(res, generateToken(user._id));
     res.json({ success: true, user: { email: user.email } });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Login failed" });
@@ -149,16 +137,20 @@ app.get("/api/auth/check", checkToken, async (req, res) => {
    LOGOUT
 ========================= */
 app.post("/api/logout", (req, res) => {
-  res.clearCookie("token", { sameSite: "none", secure: true });
+  const secureFlag = process.env.NODE_ENV === "production";
+  res.clearCookie("token", { sameSite: secureFlag ? "none" : "lax", secure: secureFlag });
   res.json({ success: true });
 });
 
 /* =========================
    AI CHAT FROM PDF
+   Accepts: { message: string, structured?: boolean }
+   If structured=true, server uses a stronger system prompt to produce
+   well organized markdown (Headings, bullets, summary, action items).
 ========================= */
 app.post("/api/chat", checkToken, async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, structured } = req.body;
     if (!message) return res.status(400).json({ reply: "Message required" });
 
     const UploadedFile =
@@ -172,23 +164,38 @@ app.post("/api/chat", checkToken, async (req, res) => {
     if (!file) return res.json({ reply: "❌ Please upload a PDF first." });
 
     const filePath = path.join(UPLOAD_DIR, file.filename);
-    if (!fs.existsSync(filePath))
-      return res.json({ reply: "❌ Uploaded file missing." });
+    if (!fs.existsSync(filePath)) return res.json({ reply: "❌ Uploaded file missing." });
 
     const pdfData = await pdfParse(fs.readFileSync(filePath));
-    const context = pdfData.text.slice(0, 6000);
+    const context = (pdfData.text || "").slice(0, 6000);
+
+    // Choose prompt based on structured flag
+    const systemPrompt = structured
+      ? `You are an expert assistant that MUST ONLY use the provided document text to answer.
+Your output must be in Markdown and must include (in this order):
+1) A single-line **Title**.
+2) **Summary** (2-3 bullets).
+3) **Key Points** (bullet list — max 10 items).
+4) **Step-by-step** or **Procedure** section if applicable.
+5) **Action Items** (clear, numbered steps a user can follow).
+6) A short **One-line TL;DR** at the end.
+If the document does not contain an answer, return exactly: "Answer not found in the provided document."
+Do NOT invent facts. Keep answers concise and well-structured.`
+      : `You are a document-based assistant. Answer using only the provided document text. If the answer cannot be found in the document, reply: "Answer not found in the provided document." Keep responses concise.`;
+
+    const payload = {
+      model: "openai/gpt-oss-20b",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Document:\n${context}\n\nQuestion:\n${message}` }
+      ],
+      temperature: 0,
+      max_tokens: 700
+    };
 
     const groqRes = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
-      {
-        model: "openai/gpt-oss-20b",
-        messages: [
-          { role: "system", content: "Answer only from the document." },
-          { role: "user", content: `Document:\n${context}\n\nQuestion:\n${message}` }
-        ],
-        temperature: 0,
-        max_tokens: 512
-      },
+      payload,
       {
         headers: {
           Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
@@ -197,13 +204,13 @@ app.post("/api/chat", checkToken, async (req, res) => {
       }
     );
 
-    res.json({
-      reply: groqRes.data.choices?.[0]?.message?.content ||
-        "Answer not found in the provided document."
-    });
+    const reply = groqRes.data?.choices?.[0]?.message?.content
+      || "Answer not found in the provided document.";
+
+    res.json({ reply });
 
   } catch (err) {
-    console.error(err);
+    console.error("AI ERROR:", err.response?.data || err.message);
     res.status(500).json({ reply: "AI error" });
   }
 });
