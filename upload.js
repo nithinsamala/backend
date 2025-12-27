@@ -5,7 +5,6 @@ const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 
 const router = express.Router();
-
 const uploadedFileSchema = new mongoose.Schema({
   filename: String,
   originalName: String,
