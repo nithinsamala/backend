@@ -108,51 +108,39 @@ const checkToken = (req, res, next) => {
    SIGNUP (FULL DEBUG)
 ========================= */
 app.post("/api/signup", async (req, res) => {
-  console.log("🟢 SIGNUP API HIT");
-  console.log("Request body:", req.body);
-
   try {
+    console.log("Signup body:", req.body);
+
     const { email, password } = req.body;
 
     if (!email || !password) {
-      console.error("❌ Missing fields");
-      return res.status(400).json({ message: "All fields required" });
+      return res.status(400).json({ message: "Email and password required" });
     }
 
-    console.log("🔍 Checking if user exists");
     const exists = await User.findOne({ email });
-    console.log("User exists:", !!exists);
-
     if (exists) {
       return res.status(409).json({ message: "User already exists" });
     }
 
-    console.log("🔐 Hashing password");
     const hashed = await bcrypt.hash(password, 12);
-
-    console.log("💾 Creating user in DB");
-    const user = await User.create({
-      email,
-      password: hashed
-    });
-
-    console.log("✅ User created:", user._id);
+    const user = await User.create({ email, password: hashed });
 
     const token = generateToken(user._id);
     sendToken(res, token);
 
-    console.log("🎉 Signup success");
-    return res.status(201).json({
+    res.json({
       success: true,
       user: { email: user.email }
     });
 
   } catch (err) {
-    console.error("🔥 SIGNUP FAILED");
-    console.error(err); // <-- FULL ERROR OBJECT
-    return res.status(500).json({ message: "Signup failed" });
+    console.error("🔥 SIGNUP ERROR:", err);
+    res.status(500).json({ message: "Signup failed" });
   }
 });
+
+  
+
 
 /* =========================
    LOGIN (DEBUG)
