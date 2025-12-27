@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 
 const router = express.Router();
+const UPLOAD_DIR = path.join(__dirname, "uploads");
 
 /* =========================
    SCHEMA
@@ -38,13 +39,10 @@ const auth = (req, res, next) => {
 /* =========================
    MULTER
 ========================= */
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    if (!fs.existsSync("uploads")) {
-      fs.mkdirSync("uploads");
-    }
-    cb(null, "uploads/");
-  },
+  destination: UPLOAD_DIR,
   filename: (req, file, cb) => {
     cb(null, Date.now() + "-" + file.originalname);
   }
