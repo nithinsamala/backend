@@ -18,23 +18,24 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 /* =========================
-   ENV VALIDATION (IMPORTANT)
+   ENV DEBUG (PRINT EVERYTHING)
 ========================= */
-if (!process.env.MONGODB_URI) {
-  console.error("❌ MONGODB_URI is missing");
-}
-if (!process.env.JWT_SECRET) {
-  console.error("❌ JWT_SECRET is missing");
-}
-if (!process.env.GROQ_API_KEY) {
-  console.error("❌ GROQ_API_KEY is missing");
-}
+console.log("🔍 ENV CHECK");
+console.log("MONGODB_URI exists:", !!process.env.MONGODB_URI);
+console.log("JWT_SECRET exists:", !!process.env.JWT_SECRET);
+console.log("GROQ_API_KEY exists:", !!process.env.GROQ_API_KEY);
 
 /* =========================
-   CORS (NO ERRORS)
+   CORS DEBUG
 ========================= */
+app.use((req, res, next) => {
+  console.log("➡️ Incoming:", req.method, req.originalUrl);
+  console.log("➡️ Origin:", req.headers.origin);
+  next();
+});
+
 app.use(cors({
-  origin: true,          // allow all origins dynamically
+  origin: true,
   credentials: true
 }));
 app.options("*", cors());
@@ -43,22 +44,15 @@ app.use(express.json());
 app.use(cookieParser());
 
 /* =========================
-   UPLOAD DIRECTORY
+   DB CONNECT (DEBUG)
 ========================= */
-const UPLOAD_DIR = path.join(__dirname, "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR);
-}
-app.use("/uploads", express.static(UPLOAD_DIR));
+mongoose.set("debug", true);
 
-/* =========================
-   DB CONNECT
-========================= */
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch(err => {
-    console.error("❌ MongoDB Error:", err.message);
-    process.exit(1);
+    console.error("❌ MongoDB Connection Failed");
+    console.error(err);
   });
 
 /* =========================
@@ -71,13 +65,15 @@ const userSchema = new mongoose.Schema({
 const User = mongoose.model("User", userSchema);
 
 /* =========================
-   JWT HELPERS
+   JWT HELPERS (DEBUG)
 ========================= */
 const generateToken = (id) => {
+  console.log("🔑 Generating JWT for user:", id);
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
 const sendToken = (res, token) => {
+  console.log("🍪 Setting auth cookie");
   res.cookie("token", token, {
     httpOnly: true,
     secure: true,
@@ -87,172 +83,117 @@ const sendToken = (res, token) => {
 };
 
 /* =========================
-   AUTH MIDDLEWARE
+   AUTH MIDDLEWARE (DEBUG)
 ========================= */
 const checkToken = (req, res, next) => {
   try {
+    console.log("🔍 Checking auth cookie");
     const token = req.cookies.token;
+    console.log("Token present:", !!token);
+
     if (!token) return res.status(401).json({ message: "Unauthorized" });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log("JWT decoded:", decoded);
+
     req.userId = decoded.id;
     next();
   } catch (err) {
+    console.error("❌ Auth error:", err.message);
     return res.status(401).json({ message: "Unauthorized" });
   }
 };
 
 /* =========================
-   SIGNUP
+   SIGNUP (FULL DEBUG)
 ========================= */
 app.post("/api/signup", async (req, res) => {
+  console.log("🟢 SIGNUP API HIT");
+  console.log("Request body:", req.body);
+
   try {
     const { email, password } = req.body;
 
-    if (!email || !password)
+    if (!email || !password) {
+      console.error("❌ Missing fields");
       return res.status(400).json({ message: "All fields required" });
+    }
 
+    console.log("🔍 Checking if user exists");
     const exists = await User.findOne({ email });
-    if (exists)
-      return res.status(409).json({ message: "User already exists" });
+    console.log("User exists:", !!exists);
 
+    if (exists) {
+      return res.status(409).json({ message: "User already exists" });
+    }
+
+    console.log("🔐 Hashing password");
     const hashed = await bcrypt.hash(password, 12);
 
+    console.log("💾 Creating user in DB");
     const user = await User.create({
       email,
       password: hashed
     });
 
-    sendToken(res, generateToken(user._id));
+    console.log("✅ User created:", user._id);
 
+    const token = generateToken(user._id);
+    sendToken(res, token);
+
+    console.log("🎉 Signup success");
     return res.status(201).json({
       success: true,
       user: { email: user.email }
     });
 
   } catch (err) {
-    console.error("🔥 SIGNUP ERROR:", err.message);
+    console.error("🔥 SIGNUP FAILED");
+    console.error(err); // <-- FULL ERROR OBJECT
     return res.status(500).json({ message: "Signup failed" });
   }
 });
 
 /* =========================
-   LOGIN
+   LOGIN (DEBUG)
 ========================= */
 app.post("/api/login", async (req, res) => {
+  console.log("🟢 LOGIN API HIT");
   try {
     const { email, password } = req.body;
 
     const user = await User.findOne({ email });
+    console.log("User found:", !!user);
+
     if (!user)
       return res.status(401).json({ message: "Invalid credentials" });
 
     const match = await bcrypt.compare(password, user.password);
+    console.log("Password match:", match);
+
     if (!match)
       return res.status(401).json({ message: "Invalid credentials" });
 
-    sendToken(res, generateToken(user._id));
+    const token = generateToken(user._id);
+    sendToken(res, token);
 
     res.json({ success: true, user: { email: user.email } });
 
   } catch (err) {
-    console.error("🔥 LOGIN ERROR:", err.message);
+    console.error("🔥 LOGIN ERROR");
+    console.error(err);
     res.status(500).json({ message: "Login failed" });
   }
 });
 
 /* =========================
-   AUTH CHECK
+   AUTH CHECK (DEBUG)
 ========================= */
 app.get("/api/auth/check", checkToken, async (req, res) => {
+  console.log("🟢 AUTH CHECK");
   const user = await User.findById(req.userId);
-  res.json({
-    isAuthenticated: true,
-    user: { email: user.email }
-  });
+  res.json({ isAuthenticated: true, user: { email: user.email } });
 });
-
-/* =========================
-   LOGOUT
-========================= */
-app.post("/api/logout", (req, res) => {
-  res.clearCookie("token", {
-    secure: true,
-    sameSite: "none"
-  });
-  res.json({ success: true });
-});
-
-/* =========================
-   AI CHAT FROM PDF
-========================= */
-app.post("/api/chat", checkToken, async (req, res) => {
-  try {
-    const { message } = req.body;
-    if (!message)
-      return res.status(400).json({ reply: "Message required" });
-
-    const UploadedFile =
-      mongoose.models.UploadedFile ||
-      mongoose.model("UploadedFile");
-
-    const file = await UploadedFile
-      .findOne({ uploadedBy: req.userId })
-      .sort({ uploadedAt: -1 });
-
-    if (!file)
-      return res.json({ reply: "❌ Please upload a PDF first." });
-
-    const filePath = path.join(UPLOAD_DIR, file.filename);
-    if (!fs.existsSync(filePath))
-      return res.json({ reply: "❌ Uploaded file missing." });
-
-    const pdfData = await pdfParse(fs.readFileSync(filePath));
-    if (!pdfData.text?.trim())
-      return res.json({ reply: "❌ No readable text in PDF." });
-
-    const context = pdfData.text.slice(0, 6000);
-
-    const groqRes = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        model: "openai/gpt-oss-20b",
-        messages: [
-          {
-            role: "system",
-            content: "Answer ONLY from the document."
-          },
-          {
-            role: "user",
-            content: `Document:\n${context}\n\nQuestion:\n${message}`
-          }
-        ],
-        temperature: 0
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-
-    res.json({
-      reply:
-        groqRes.data.choices?.[0]?.message?.content ||
-        "Answer not found in document."
-    });
-
-  } catch (err) {
-    console.error("🔥 CHAT ERROR:", err.message);
-    res.status(500).json({ reply: "AI error" });
-  }
-});
-
-/* =========================
-   UPLOAD ROUTES
-========================= */
-app.use("/api/uploads", uploadRouter);
 
 /* =========================
    START SERVER
