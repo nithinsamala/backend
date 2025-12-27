@@ -192,8 +192,7 @@ app.get("/api/auth/check", checkToken, async (req, res) => {
 app.post("/api/logout", (req, res) => {
   res.clearCookie("token", {
     secure: true,
-    sameSite: "none",
-        path: "/"   
+    sameSite: "none"
   });
   res.json({ success: true });
 });
