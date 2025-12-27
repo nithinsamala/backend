@@ -6,6 +6,12 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const cookieParser = require("cookie-parser");
 
+/* 🔥 MISSING IMPORTS (CAUSE OF 500) */
+const fs = require("fs");
+const path = require("path");
+const axios = require("axios");
+const pdfParse = require("pdf-parse");
+
 const uploadRouter = require("./upload");
 
 dotenv.config();
@@ -66,7 +72,7 @@ const checkToken = (req, res, next) => {
     req.userId = decoded.id;
     next();
   } catch {
-    res.status(401).json({ message: "Unauthorized" });
+    return res.status(401).json({ message: "Unauthorized" });
   }
 };
 
@@ -121,22 +127,16 @@ app.get("/api/auth/check", checkToken, (req, res) => {
 });
 
 /* =========================
-   🔥 CHAT ROUTE (YOU ASKED)
-========================= */
-/* =========================
    AI CHAT FROM PDF
 ========================= */
 app.post("/api/chat", checkToken, async (req, res) => {
   try {
     const { message } = req.body;
-
     if (!message) {
       return res.status(400).json({ reply: "Message is required" });
     }
 
-    /* =========================
-       GET LATEST UPLOADED PDF
-    ========================= */
+    /* GET LATEST UPLOADED FILE */
     const UploadedFile =
       mongoose.models.UploadedFile ||
       mongoose.model("UploadedFile");
@@ -146,37 +146,26 @@ app.post("/api/chat", checkToken, async (req, res) => {
       .sort({ uploadedAt: -1 });
 
     if (!file) {
-      return res.json({
-        reply: "❌ Please upload a PDF first."
-      });
+      return res.json({ reply: "❌ Please upload a PDF first." });
     }
 
     const filePath = path.join(__dirname, "uploads", file.filename);
 
     if (!fs.existsSync(filePath)) {
-      return res.json({
-        reply: "❌ Uploaded file not found on server."
-      });
+      return res.json({ reply: "❌ Uploaded file not found on server." });
     }
 
-    /* =========================
-       READ PDF
-    ========================= */
+    /* READ PDF */
     const pdfBuffer = fs.readFileSync(filePath);
     const pdfData = await pdfParse(pdfBuffer);
 
     if (!pdfData.text || !pdfData.text.trim()) {
-      return res.json({
-        reply: "❌ No readable text found in the PDF."
-      });
+      return res.json({ reply: "❌ No readable text found in the PDF." });
     }
 
-    // limit context to avoid token overflow
     const context = pdfData.text.slice(0, 6000);
 
-    /* =========================
-       GROQ REQUEST
-    ========================= */
+    /* GROQ REQUEST */
     const groqResponse = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
@@ -231,7 +220,6 @@ ${message}
     });
   }
 });
-
 
 /* =========================
    UPLOAD ROUTER
