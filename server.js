@@ -23,7 +23,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors({
   origin: [
     "http://localhost:5173",
-    "https://YOUR-VERCEL-APP.vercel.app" // 🔴 replace with real URL
+    "https://fend-sand.vercel.app"
   ],
   credentials: true
 }));
