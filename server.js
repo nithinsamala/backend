@@ -18,27 +18,42 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 /* =========================
-   MIDDLEWARE
+   MIDDLEWARE (CORS = robust)
 ========================= */
-/* =========================
-   MIDDLEWARE (FIXED)
-========================= */
+// Log origin for debugging (remove this line after confirm)
+app.use((req, res, next) => {
+  console.log("Incoming request origin:", req.headers.origin);
+  next();
+});
+
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "https://fend-jpqu.vercel.app/" // ✅ ONLY DOMAIN
-  ],
+  origin: (origin, callback) => {
+    // allow server-to-server requests (no origin)
+    if (!origin) return callback(null, true);
+
+    // allow local development
+    if (origin === "http://localhost:5173") return callback(null, true);
+
+    // allow any vercel.app domain (production / preview)
+    try {
+      if (origin.endsWith(".vercel.app")) return callback(null, true);
+    } catch (e) {
+      // ignore
+    }
+
+    // otherwise block
+    return callback(new Error("Not allowed by CORS"));
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
 }));
 
-// ✅ Allow preflight requests
+// Ensure preflight requests are handled
 app.options("*", cors());
 
 app.use(express.json());
 app.use(cookieParser());
-
 
 /* =========================
    UPLOAD DIRECTORY
