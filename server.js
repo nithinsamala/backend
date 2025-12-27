@@ -91,7 +91,6 @@ const checkToken = (req, res, next) => {
    SIGNUP
 ========================= */
 app.post("/api/signup", async (req, res) => {
-   console.log("API_URL =", API_URL);
 
   const { email, password } = req.body;
 
