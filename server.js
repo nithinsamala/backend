@@ -180,7 +180,7 @@ app.post("/api/chat", checkToken, async (req, res) => {
     const groqResponse = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "openai/gpt-oss-20b",
+        model: "llama-3.3-70b-versatile",
         messages: [
           {
             role: "system",
