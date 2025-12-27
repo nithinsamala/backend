@@ -123,25 +123,115 @@ app.get("/api/auth/check", checkToken, (req, res) => {
 /* =========================
    🔥 CHAT ROUTE (YOU ASKED)
 ========================= */
+/* =========================
+   AI CHAT FROM PDF
+========================= */
 app.post("/api/chat", checkToken, async (req, res) => {
   try {
     const { message } = req.body;
 
-    if (!message)
-      return res.status(400).json({ message: "Message required" });
+    if (!message) {
+      return res.status(400).json({ reply: "Message is required" });
+    }
 
-    // 🔹 TEMP DUMMY RESPONSE
-    // Later you can connect Groq / OpenAI / Gemini here
-    const aiReply = `AI received: "${message}"`;
+    /* =========================
+       GET LATEST UPLOADED PDF
+    ========================= */
+    const UploadedFile =
+      mongoose.models.UploadedFile ||
+      mongoose.model("UploadedFile");
 
-    res.json({
-      success: true,
-      reply: aiReply
+    const file = await UploadedFile
+      .findOne({ uploadedBy: req.userId })
+      .sort({ uploadedAt: -1 });
+
+    if (!file) {
+      return res.json({
+        reply: "❌ Please upload a PDF first."
+      });
+    }
+
+    const filePath = path.join(__dirname, "uploads", file.filename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.json({
+        reply: "❌ Uploaded file not found on server."
+      });
+    }
+
+    /* =========================
+       READ PDF
+    ========================= */
+    const pdfBuffer = fs.readFileSync(filePath);
+    const pdfData = await pdfParse(pdfBuffer);
+
+    if (!pdfData.text || !pdfData.text.trim()) {
+      return res.json({
+        reply: "❌ No readable text found in the PDF."
+      });
+    }
+
+    // limit context to avoid token overflow
+    const context = pdfData.text.slice(0, 6000);
+
+    /* =========================
+       GROQ REQUEST
+    ========================= */
+    const groqResponse = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "openai/gpt-oss-20b",
+        messages: [
+          {
+            role: "system",
+            content: `
+You are a strict document-based assistant.
+
+RULES:
+1. Answer ONLY using the provided document content.
+2. If the answer is not present, reply exactly:
+   "Answer not found in the provided document."
+3. Use Markdown.
+4. Use **bold headings** and bullet points.
+5. Do NOT add outside knowledge.
+`
+          },
+          {
+            role: "user",
+            content: `
+Document Content:
+${context}
+
+User Question:
+${message}
+`
+          }
+        ],
+        temperature: 0,
+        max_tokens: 512
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    const reply =
+      groqResponse.data?.choices?.[0]?.message?.content ||
+      "Answer not found in the provided document.";
+
+    return res.json({ reply });
+
+  } catch (error) {
+    console.error("🔥 CHAT ERROR:", error.response?.data || error.message);
+    return res.status(500).json({
+      reply: "❌ Failed to answer from the document."
     });
-  } catch (err) {
-    res.status(500).json({ message: "Chat failed" });
   }
 });
+
 
 /* =========================
    UPLOAD ROUTER
