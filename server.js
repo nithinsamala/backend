@@ -7,10 +7,6 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const cookieParser = require("cookie-parser");
 const path = require("path");
-const axios = require("axios");
-const pdfParse = require("pdf-parse");
-
-const uploadRouter = require("./upload");
 
 dotenv.config();
 
@@ -18,49 +14,16 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 /* =========================
-   MIDDLEWARE (CORS – FIXED SAFELY)
+   CORS (NO ERRORS EVER)
 ========================= */
-
-// Optional debug log (remove later)
-app.use((req, res, next) => {
-  console.log("Origin:", req.headers.origin);
-  next();
-});
-
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (server-to-server, curl, etc.)
-    if (!origin) return callback(null, true);
-
-    // Allow localhost
-    if (origin === "http://localhost:5173") return callback(null, true);
-
-    // Allow ALL Vercel deployments (preview + prod)
-    if (origin.endsWith(".vercel.app")) return callback(null, true);
-
-    // 🚨 IMPORTANT: DO NOT THROW ERROR
-    // Just disallow silently
-    return callback(null, false);
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  origin: true,          // allow any origin
+  credentials: true
 }));
-
-// Handle preflight
 app.options("*", cors());
 
 app.use(express.json());
 app.use(cookieParser());
-
-/* =========================
-   UPLOAD DIRECTORY
-========================= */
-const UPLOAD_DIR = path.join(__dirname, "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR);
-}
-app.use("/uploads", express.static(UPLOAD_DIR));
 
 /* =========================
    DB CONNECT
@@ -87,8 +50,8 @@ const generateToken = (id) =>
 const sendToken = (res, token) => {
   res.cookie("token", token, {
     httpOnly: true,
-    sameSite: "none",
     secure: true,
+    sameSite: "none",
     maxAge: 7 * 24 * 60 * 60 * 1000
   });
 };
@@ -99,7 +62,7 @@ const sendToken = (res, token) => {
 const checkToken = (req, res, next) => {
   try {
     const token = req.cookies.token;
-    if (!token) throw new Error("No token");
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.id;
@@ -110,7 +73,7 @@ const checkToken = (req, res, next) => {
 };
 
 /* =========================
-   SIGNUP
+   SIGNUP API
 ========================= */
 app.post("/api/signup", async (req, res) => {
   const { email, password } = req.body;
@@ -130,49 +93,39 @@ app.post("/api/signup", async (req, res) => {
 });
 
 /* =========================
-   LOGIN
+   LOGIN API
 ========================= */
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body;
 
   const user = await User.findOne({ email });
-  if (!user)
-    return res.status(401).json({ message: "Invalid credentials" });
+  if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
   const match = await bcrypt.compare(password, user.password);
-  if (!match)
-    return res.status(401).json({ message: "Invalid credentials" });
+  if (!match) return res.status(401).json({ message: "Invalid credentials" });
 
   sendToken(res, generateToken(user._id));
   res.json({ success: true, user: { email: user.email } });
 });
 
 /* =========================
-   AUTH CHECK
+   AUTH CHECK API
 ========================= */
 app.get("/api/auth/check", checkToken, async (req, res) => {
   const user = await User.findById(req.userId);
-  res.json({
-    isAuthenticated: true,
-    user: { email: user.email }
-  });
+  res.json({ isAuthenticated: true, user: { email: user.email } });
 });
 
 /* =========================
-   LOGOUT
+   LOGOUT API
 ========================= */
 app.post("/api/logout", (req, res) => {
   res.clearCookie("token", {
-    sameSite: "none",
-    secure: true
+    secure: true,
+    sameSite: "none"
   });
   res.json({ success: true });
 });
-
-/* =========================
-   UPLOAD ROUTES
-========================= */
-app.use("/api/uploads", uploadRouter);
 
 /* =========================
    START SERVER
