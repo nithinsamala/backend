@@ -15,19 +15,25 @@ const uploadRouter = require("./upload");
 dotenv.config();
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 /* =========================
    MIDDLEWARE
 ========================= */
 app.use(cors({
-  origin: "http://localhost:5173",
+  origin: [
+    "http://localhost:5173",
+    "https://YOUR-VERCEL-APP.vercel.app" // 🔴 replace with real URL
+  ],
   credentials: true
 }));
+
 app.use(express.json());
 app.use(cookieParser());
 
-// ✅ CONSISTENT UPLOAD PATH
+/* =========================
+   UPLOAD DIRECTORY
+========================= */
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR);
@@ -59,8 +65,8 @@ const generateToken = (id) =>
 const sendToken = (res, token) => {
   res.cookie("token", token, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: false,
+    sameSite: "none",
+    secure: true,
     maxAge: 7 * 24 * 60 * 60 * 1000
   });
 };
@@ -134,7 +140,10 @@ app.get("/api/auth/check", checkToken, async (req, res) => {
    LOGOUT
 ========================= */
 app.post("/api/logout", (req, res) => {
-  res.clearCookie("token");
+  res.clearCookie("token", {
+    sameSite: "none",
+    secure: true
+  });
   res.json({ success: true });
 });
 
@@ -144,11 +153,8 @@ app.post("/api/logout", (req, res) => {
 app.post("/api/chat", checkToken, async (req, res) => {
   try {
     const { message } = req.body;
-    if (!message) {
-      return res.status(400).json({ reply: "Message required" });
-    }
+    if (!message) return res.status(400).json({ reply: "Message required" });
 
-    // ✅ SAFE MODEL ACCESS
     const UploadedFile =
       mongoose.models.UploadedFile ||
       mongoose.model("UploadedFile");
@@ -157,23 +163,17 @@ app.post("/api/chat", checkToken, async (req, res) => {
       .findOne({ uploadedBy: req.userId })
       .sort({ uploadedAt: -1 });
 
-    if (!file) {
+    if (!file)
       return res.json({ reply: "❌ Please upload a PDF first." });
-    }
 
     const filePath = path.join(UPLOAD_DIR, file.filename);
-    if (!fs.existsSync(filePath)) {
+    if (!fs.existsSync(filePath))
       return res.json({ reply: "❌ Uploaded file missing on server." });
-    }
 
-    const pdfBuffer = fs.readFileSync(filePath);
-    const pdfData = await pdfParse(pdfBuffer);
-
-    if (!pdfData.text || !pdfData.text.trim()) {
+    const pdfData = await pdfParse(fs.readFileSync(filePath));
+    if (!pdfData.text?.trim())
       return res.json({ reply: "❌ No readable text found in PDF." });
-    }
 
-    // 🔹 limit context to avoid token overflow
     const context = pdfData.text.slice(0, 6000);
 
     const groqRes = await axios.post(
@@ -181,50 +181,22 @@ app.post("/api/chat", checkToken, async (req, res) => {
       {
         model: "openai/gpt-oss-20b",
         messages: [
-      {
-  role: "system",
-  content: `
+          {
+            role: "system",
+            content: `
 You are a strict document-based assistant.
-
-MANDATORY RULES:
-1. Answer ONLY using the information provided in the document content.
-2. Do NOT use outside knowledge, assumptions, or guesses.
-3. If the answer is NOT explicitly present in the document, respond EXACTLY with:
-   "Answer not found in the provided document."
-4. Do NOT mention the document or PDF in the response.
-
-OUTPUT FORMAT (STRICT):
-- Use Markdown formatting.
-- Use **bold headings**.
-- Use bullet points under each heading.
-- Do NOT write paragraphs.
-- Do NOT add extra headings unless the document supports them.
-- If the document mentions items like skills, tools, roles, steps, or features, group them under clear bold headings.
-
-Example format:
-**Skills**
-- Skill 1
-- Skill 2
-
-**Responsibilities**
-- Responsibility 1
-- Responsibility 2
+- Answer ONLY from the document
+- If not found say: "Answer not found in the provided document."
+- Use **bold headings** and bullet points only
 `
-},
-
+          },
           {
             role: "user",
-            content: `
-Document Content:
-${context}
-
-User Question:
-${message}
-`
+            content: `Document:\n${context}\n\nQuestion:\n${message}`
           }
         ],
-        max_tokens: 512,
-        temperature: 0
+        temperature: 0,
+        max_tokens: 512
       },
       {
         headers: {
@@ -234,20 +206,16 @@ ${message}
       }
     );
 
-    const reply =
-      groqRes.data?.choices?.[0]?.message?.content ||
-      "Answer not found in the provided document.";
-
-    res.json({ reply });
+    res.json({
+      reply: groqRes.data.choices?.[0]?.message?.content
+        || "Answer not found in the provided document."
+    });
 
   } catch (err) {
-    console.error("🔥 AI ERROR:", err.response?.data || err.message);
-    res.status(500).json({
-      reply: "❌ AI failed to answer from the document"
-    });
+    console.error("🔥 AI ERROR:", err.message);
+    res.status(500).json({ reply: "❌ AI error" });
   }
 });
-
 
 /* =========================
    UPLOAD ROUTES
@@ -258,5 +226,5 @@ app.use("/api/uploads", uploadRouter);
    START SERVER
 ========================= */
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
