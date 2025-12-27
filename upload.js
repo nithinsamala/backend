@@ -7,7 +7,6 @@ const mongoose = require("mongoose");
 
 const router = express.Router();
 const UPLOAD_DIR = path.join(__dirname, "uploads");
-
 /* =========================
    SCHEMA
 ========================= */
