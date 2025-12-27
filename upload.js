@@ -1,6 +1,5 @@
 const express = require("express");
 const multer = require("multer");
-const path = require("path");
 const fs = require("fs");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
@@ -31,7 +30,7 @@ const auth = (req, res, next) => {
     req.userId = decoded.id;
     next();
   } catch {
-    return res.status(401).json({ message: "Unauthorized" });
+    res.status(401).json({ message: "Unauthorized" });
   }
 };
 
@@ -40,9 +39,7 @@ const auth = (req, res, next) => {
 ========================= */
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    if (!fs.existsSync("uploads")) {
-      fs.mkdirSync("uploads");
-    }
+    if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
     cb(null, "uploads/");
   },
   filename: (req, file, cb) => {
@@ -53,7 +50,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 /* =========================
-   ROUTES
+   ROUTE
 ========================= */
 router.post("/upload", auth, upload.single("file"), async (req, res) => {
   const file = await UploadedFile.create({
