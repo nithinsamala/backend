@@ -7,9 +7,16 @@ const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 
 const router = express.Router();
-const UPLOAD_DIR = path.join(__dirname, "uploads");
 
-/* SCHEMA */
+/* =========================
+   UPLOAD DIRECTORY (FIXED)
+========================= */
+const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+/* =========================
+   SCHEMA
+========================= */
 const uploadedFileSchema = new mongoose.Schema({
   filename: String,
   originalName: String,
@@ -21,10 +28,16 @@ const UploadedFile =
   mongoose.models.UploadedFile ||
   mongoose.model("UploadedFile", uploadedFileSchema);
 
-/* AUTH */
+/* =========================
+   AUTH MIDDLEWARE
+========================= */
 const auth = (req, res, next) => {
   try {
     const token = req.cookies?.token;
+    if (!token) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.id;
     next();
@@ -33,25 +46,47 @@ const auth = (req, res, next) => {
   }
 };
 
-/* MULTER */
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
-
+/* =========================
+   MULTER CONFIG (SAFE)
+========================= */
 const storage = multer.diskStorage({
-  destination: UPLOAD_DIR,
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
+  destination: (_, __, cb) => cb(null, UPLOAD_DIR),
+  filename: (_, file, cb) =>
+    cb(null, `${Date.now()}-${file.originalname}`)
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (_, file, cb) => {
+    if (file.mimetype !== "application/pdf") {
+      return cb(new Error("Only PDF files allowed"));
+    }
+    cb(null, true);
+  }
+});
 
-/* ROUTE */
+/* =========================
+   UPLOAD ROUTE
+========================= */
 router.post("/", auth, upload.single("file"), async (req, res) => {
-  const file = await UploadedFile.create({
-    filename: req.file.filename,
-    originalName: req.file.originalname,
-    uploadedBy: req.userId
-  });
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
 
-  res.json({ success: true, file });
+    const file = await UploadedFile.create({
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      uploadedBy: req.userId
+    });
+
+    res.json({ success: true, file });
+
+  } catch (err) {
+    console.error("UPLOAD ERROR:", err.message);
+    res.status(500).json({ message: "Upload failed" });
+  }
 });
 
 module.exports = router;
