@@ -11,30 +11,25 @@ const axios = require("axios");
 const pdfParse = require("pdf-parse");
 
 const uploadRouter = require("./upload");
+
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 /* =========================
-   ENV DEBUG (PRINT EVERYTHING)
+   ENV CHECK
 ========================= */
 console.log("🔍 ENV CHECK");
-console.log("MONGODB_URI exists:", !!process.env.MONGODB_URI);
-console.log("JWT_SECRET exists:", !!process.env.JWT_SECRET);
-console.log("GROQ_API_KEY exists:", !!process.env.GROQ_API_KEY);
+console.log("MONGODB_URI:", !!process.env.MONGODB_URI);
+console.log("JWT_SECRET:", !!process.env.JWT_SECRET);
+console.log("GROQ_API_KEY:", !!process.env.GROQ_API_KEY);
 
 /* =========================
-   CORS DEBUG
+   CORS (SAFE FOR VERCEL)
 ========================= */
-app.use((req, res, next) => {
-  console.log("➡️ Incoming:", req.method, req.originalUrl);
-  console.log("➡️ Origin:", req.headers.origin);
-  next();
-});
-
 app.use(cors({
-  origin: true,
+  origin: true,          // allow all vercel preview + prod
   credentials: true
 }));
 app.options("*", cors());
@@ -43,36 +38,44 @@ app.use(express.json());
 app.use(cookieParser());
 
 /* =========================
-   DB CONNECT (DEBUG)
+   DB CONNECT
 ========================= */
 mongoose.set("debug", true);
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch(err => {
-    console.error("❌ MongoDB Connection Failed");
+    console.error("❌ MongoDB Connection Error");
     console.error(err);
   });
 
 /* =========================
-   USER MODEL
+   USER MODEL (FIXED)
 ========================= */
 const userSchema = new mongoose.Schema({
-  email: { type: String, unique: true },
-  password: String
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    lowercase: true,
+    trim: true
+  },
+  password: {
+    type: String,
+    required: true
+  }
 });
+
 const User = mongoose.model("User", userSchema);
 
 /* =========================
-   JWT HELPERS (DEBUG)
+   JWT HELPERS
 ========================= */
 const generateToken = (id) => {
-  console.log("🔑 Generating JWT for user:", id);
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
 const sendToken = (res, token) => {
-  console.log("🍪 Setting auth cookie");
   res.cookie("token", token, {
     httpOnly: true,
     secure: true,
@@ -82,39 +85,41 @@ const sendToken = (res, token) => {
 };
 
 /* =========================
-   AUTH MIDDLEWARE (DEBUG)
+   AUTH MIDDLEWARE
 ========================= */
 const checkToken = (req, res, next) => {
   try {
-    console.log("🔍 Checking auth cookie");
     const token = req.cookies.token;
-    console.log("Token present:", !!token);
-
     if (!token) return res.status(401).json({ message: "Unauthorized" });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log("JWT decoded:", decoded);
-
     req.userId = decoded.id;
     next();
   } catch (err) {
-    console.error("❌ Auth error:", err.message);
     return res.status(401).json({ message: "Unauthorized" });
   }
 };
 
 /* =========================
-   SIGNUP (FULL DEBUG)
+   HEALTH CHECK
+========================= */
+app.get("/", (req, res) => {
+  res.send("✅ Backend is running");
+});
+
+/* =========================
+   SIGNUP (FINAL & SAFE)
 ========================= */
 app.post("/api/signup", async (req, res) => {
   try {
-    console.log("Signup body:", req.body);
-
-    const { email, password } = req.body;
+    let { email, password } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ message: "Email and password required" });
     }
+
+    // ✅ normalize email
+    email = email.trim().toLowerCase();
 
     const hashed = await bcrypt.hash(password, 12);
 
@@ -132,42 +137,30 @@ app.post("/api/signup", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("🔥 SIGNUP ERROR FULL:", err);
+    console.error("🔥 SIGNUP ERROR:", err);
 
-    // ✅ HANDLE DUPLICATE EMAIL
     if (err.code === 11000) {
-      return res.status(409).json({
-        message: "User already exists"
-      });
+      return res.status(409).json({ message: "User already exists" });
     }
 
-    return res.status(500).json({
-      message: "Internal server error"
-    });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
-
-  
-
-
 /* =========================
-   LOGIN (DEBUG)
+   LOGIN
 ========================= */
 app.post("/api/login", async (req, res) => {
-  console.log("🟢 LOGIN API HIT");
   try {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
+
+    email = email.trim().toLowerCase();
 
     const user = await User.findOne({ email });
-    console.log("User found:", !!user);
-
     if (!user)
       return res.status(401).json({ message: "Invalid credentials" });
 
     const match = await bcrypt.compare(password, user.password);
-    console.log("Password match:", match);
-
     if (!match)
       return res.status(401).json({ message: "Invalid credentials" });
 
@@ -177,19 +170,31 @@ app.post("/api/login", async (req, res) => {
     res.json({ success: true, user: { email: user.email } });
 
   } catch (err) {
-    console.error("🔥 LOGIN ERROR");
-    console.error(err);
+    console.error("🔥 LOGIN ERROR:", err);
     res.status(500).json({ message: "Login failed" });
   }
 });
 
 /* =========================
-   AUTH CHECK (DEBUG)
+   AUTH CHECK
 ========================= */
 app.get("/api/auth/check", checkToken, async (req, res) => {
-  console.log("🟢 AUTH CHECK");
   const user = await User.findById(req.userId);
-  res.json({ isAuthenticated: true, user: { email: user.email } });
+  res.json({
+    isAuthenticated: true,
+    user: { email: user.email }
+  });
+});
+
+/* =========================
+   LOGOUT
+========================= */
+app.post("/api/logout", (req, res) => {
+  res.clearCookie("token", {
+    secure: true,
+    sameSite: "none"
+  });
+  res.json({ success: true });
 });
 
 /* =========================
