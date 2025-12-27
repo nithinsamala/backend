@@ -1,3 +1,4 @@
+// upload.js
 const express = require("express");
 const multer = require("multer");
 const path = require("path");
@@ -7,9 +8,8 @@ const mongoose = require("mongoose");
 
 const router = express.Router();
 const UPLOAD_DIR = path.join(__dirname, "uploads");
-/* =========================
-   SCHEMA
-========================= */
+
+/* SCHEMA */
 const uploadedFileSchema = new mongoose.Schema({
   filename: String,
   originalName: String,
@@ -21,12 +21,10 @@ const UploadedFile =
   mongoose.models.UploadedFile ||
   mongoose.model("UploadedFile", uploadedFileSchema);
 
-/* =========================
-   AUTH
-========================= */
+/* AUTH */
 const auth = (req, res, next) => {
   try {
-    const token = req.cookies.token;
+    const token = req.cookies?.token;
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.id;
     next();
@@ -35,22 +33,17 @@ const auth = (req, res, next) => {
   }
 };
 
-/* =========================
-   MULTER
-========================= */
+/* MULTER */
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
 const storage = multer.diskStorage({
   destination: UPLOAD_DIR,
-  filename: (req, file, cb) =>
-    cb(null, Date.now() + "-" + file.originalname)
+  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
 });
 
 const upload = multer({ storage });
 
-/* =========================
-   ROUTE
-========================= */
+/* ROUTE */
 router.post("/", auth, upload.single("file"), async (req, res) => {
   const file = await UploadedFile.create({
     filename: req.file.filename,
