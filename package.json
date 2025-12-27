@@ -1,0 +1,48 @@
+{
+  "dependencies": {
+    "aos": "^2.3.4",
+    "axios": "^1.13.2",
+    "bcrypt": "^5.1.1",
+    "bcryptjs": "^3.0.3",
+    "body-parser": "^1.20.2",
+    "chart.js": "^4.5.0",
+    "connect-mongo": "^5.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "express-session": "^1.17.3",
+    "feather-icons": "^4.29.2",
+    "groq-sdk": "^0.37.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^7.8.8",
+    "multer": "^2.0.2",
+    "node-fetch": "^3.3.2",
+    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^3.11.174",
+    "react-helmet": "^6.1.0",
+    "react-hook-form": "^7.69.0",
+    "react-icons": "^4.12.0",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.11.0",
+    "react-syntax-highlighter": "^16.1.0",
+    "react-window": "^2.2.0",
+    "tailwindcss": "^4.1.14",
+    "three": "^0.180.0",
+    "three-stdlib": "^2.36.0",
+    "uuid": "^9.0.0"
+  },
+  "name": "chatbot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
