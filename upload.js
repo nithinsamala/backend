@@ -26,6 +26,8 @@ const UploadedFile =
 const auth = (req, res, next) => {
   try {
     const token = req.cookies.token;
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.id;
     next();
@@ -50,9 +52,13 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 /* =========================
-   ROUTE
+   🔥 MAIN FIX
+   POST /api/uploads
 ========================= */
-router.post("/upload", auth, upload.single("file"), async (req, res) => {
+router.post("/", auth, upload.single("file"), async (req, res) => {
+  if (!req.file)
+    return res.status(400).json({ message: "No file uploaded" });
+
   const file = await UploadedFile.create({
     filename: req.file.filename,
     originalName: req.file.originalname,
