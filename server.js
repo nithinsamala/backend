@@ -49,18 +49,28 @@ const User = mongoose.model("User", userSchema);
 /* =========================
    JWT HELPERS
 ========================= */
-const generateToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+const generateToken = (id) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is not defined");
+  }
+
+  return jwt.sign(
+    { id },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+};
 
 const sendToken = (res, token) => {
   res.cookie("token", token, {
     httpOnly: true,
-    secure: true,
+    secure: true,      // required on Render
     sameSite: "none",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: "/"          // 🔥 IMPORTANT
+    path: "/",
+    maxAge: 7 * 24 * 60 * 60 * 1000
   });
 };
+
 
 /* =========================
    AUTH MIDDLEWARE
@@ -90,9 +100,12 @@ app.get("/", (req, res) => {
 ========================= */
 app.post("/api/signup", async (req, res) => {
   try {
+    console.log("SIGNUP BODY:", req.body);
+    console.log("JWT_SECRET EXISTS:", !!process.env.JWT_SECRET);
+
     let { email, password } = req.body;
 
-    // ✅ validation FIRST
+    // 🛑 Hard validation
     if (typeof email !== "string" || typeof password !== "string") {
       return res.status(400).json({ message: "Invalid input" });
     }
@@ -111,14 +124,20 @@ app.post("/api/signup", async (req, res) => {
     const hashed = await bcrypt.hash(password, 12);
     const user = await User.create({ email, password: hashed });
 
-    sendToken(res, generateToken(user._id));
-    res.json({ success: true });
+    // 🔥 This was crashing earlier
+    const token = generateToken(user._id);
+    sendToken(res, token);
+
+    return res.status(201).json({ success: true });
 
   } catch (err) {
-    console.error("SIGNUP ERROR:", err);
-    res.status(500).json({ message: "Signup failed" });
+    console.error("🔥 SIGNUP ERROR:", err.message);
+    return res.status(500).json({
+      message: err.message || "Signup failed"
+    });
   }
 });
+
 
 
 
