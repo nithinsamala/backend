@@ -100,6 +100,7 @@ app.get("/", (req, res) => {
 ========================= */
 app.post("/api/signup", async (req, res) => {
   try {
+      console.log("JWT_SECRET VALUE:", process.env.JWT_SECRET);
     console.log("SIGNUP BODY:", req.body);
     console.log("JWT_SECRET EXISTS:", !!process.env.JWT_SECRET);
 
