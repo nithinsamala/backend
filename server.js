@@ -91,19 +91,32 @@ app.get("/", (req, res) => {
 app.post("/api/signup", async (req, res) => {
   try {
     let { email, password } = req.body;
-    email = email.toLowerCase();
+
+    console.log("SIGNUP EMAIL RECEIVED:", email);
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password required" });
+    }
+
+    email = email.trim().toLowerCase();
+
+    const alreadyExists = await User.findOne({ email });
+    if (alreadyExists) {
+      return res.status(409).json({ message: "User already exists" });
+    }
 
     const hashed = await bcrypt.hash(password, 12);
     const user = await User.create({ email, password: hashed });
 
     sendToken(res, generateToken(user._id));
     res.json({ success: true });
+
   } catch (err) {
-    if (err.code === 11000)
-      return res.status(409).json({ message: "User exists" });
+    console.error("SIGNUP ERROR:", err);
     res.status(500).json({ message: "Signup failed" });
   }
 });
+
 
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body;
