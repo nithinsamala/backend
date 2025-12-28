@@ -92,16 +92,19 @@ app.post("/api/signup", async (req, res) => {
   try {
     let { email, password } = req.body;
 
-    console.log("SIGNUP EMAIL RECEIVED:", email);
-
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password required" });
+    // ✅ validation FIRST
+    if (typeof email !== "string" || typeof password !== "string") {
+      return res.status(400).json({ message: "Invalid input" });
     }
 
     email = email.trim().toLowerCase();
 
-    const alreadyExists = await User.findOne({ email });
-    if (alreadyExists) {
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email & password required" });
+    }
+
+    const exists = await User.findOne({ email });
+    if (exists) {
       return res.status(409).json({ message: "User already exists" });
     }
 
@@ -116,6 +119,7 @@ app.post("/api/signup", async (req, res) => {
     res.status(500).json({ message: "Signup failed" });
   }
 });
+
 
 
 app.post("/api/login", async (req, res) => {
